@@ -4,7 +4,7 @@ default[:cabot][:home_dir] = '/opt/cabot'
 default[:cabot][:log_dir] = '/var/log/cabot'
 default[:cabot][:virtualenv_dir] = "#{node[:cabot][:home_dir]}/venv"
 
-default[:cabot][:repo_url] = 'https://github.com/arachnys/cabot.git'
+default[:cabot][:repo_url] = 'https://github.com/bzanni-avob/cabot.git'
 
 default[:cabot][:environment] = 'production'
 
@@ -14,12 +14,16 @@ else
   default[:cabot][:debug] = 'f'
 end
 
-default[:cabot][:database_url] = 'sqlite:///cabot.db'
+default[:postgresql][:config][:listen_addresses] = "0.0.0.0"
+default[:postgresql][:password][:postgres] = "postgres"
+
+
+default[:cabot][:database_url] = 'postgres://postgres:postgres@localhost:5432/index'
 default[:cabot][:port] = 5000
 default[:cabot][:admin_email] = 'you@example.com'
 default[:cabot][:from_email] = 'cabot@example.com'
 default[:cabot][:ical_url] = 'http://www.google.com/calendar/ical/example.ics'
-default[:cabot][:celery_broker_url] = 'redis://:yourrediskey@localhost:6379/1'
+default[:cabot][:celery_broker_url] = 'redis://localhost:6379/1'
 default[:cabot][:django_secret_key] = '2FL6ORhHwr5eX34pP9mMugnIOd3jzVuT45f7w430Mt5PnEwbcJgma0q8zUXNZ68A' # rubocop:disable LineLength
 default[:cabot][:graphite_api_url] = 'http://graphite.example.com/'
 default[:cabot][:graphite_username] = 'username'

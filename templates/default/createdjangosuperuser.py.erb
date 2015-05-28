@@ -1,0 +1,7 @@
+from django.contrib.auth.models import User
+
+try:
+   user = User.objects.get(username='bzanni')
+except User.DoesNotExist:
+   User.objects.create_superuser('bzanni', 'bzanni@example.com', 'bzanni')
+   pass

@@ -8,8 +8,11 @@
 # MIT License
 #
 
+
+
+
 # dependency setup
-%w(ubuntu git npm python redis build-essential).each do |cookbook|
+%w(git npm python redis build-essential postgresql::server database::postgresql).each do |cookbook|
   include_recipe cookbook
 end
 
@@ -75,7 +78,7 @@ git node[:cabot][:home_dir] do
   group node[:cabot][:group]
 end
 
-template "#{node[:cabot][:home_dir]}/conf/production.env" do
+template "#{node[:cabot][:home_dir]}/conf/development.env" do
   action :create
   source 'production.env.erb'
   variables(
@@ -106,39 +109,163 @@ template "#{node[:cabot][:home_dir]}/conf/production.env" do
             www_http_host: node[:cabot][:www_http_host],
             www_scheme: node[:cabot][:www_scheme]
           )
-  notifies :run, 'bash[run migrations]', :immediately
 end
+username = "vagrant"
+
+Chef::Log.debug("generate ssh skys for #{username}.")
+  
+execute "generate ssh" do
+  user username
+  creates "/home/#{username}/.ssh/id_rsa.pub"
+  command "ssh-keygen -t rsa -q -f /home/#{username}/.ssh/id_rsa -P \"\""
+end
+
+
+bash 'setup' do
+  cwd node[:cabot][:home_dir]
+  code <<-EOH
+    ssh-keygen 
+    python setup.py install
+    pip install setuptools --upgrade
+    virtualenv venv
+    chmod +x venv/bin/activate
+    chmod +x venv/bin/activate.fish
+    source venv/bin/activate; 
+  EOH
+end
+
+postgresql_connection_info = {
+  :host     => '127.0.0.1',
+  :port     => node['postgresql']['config']['port'],
+  :username => 'postgres',
+  :password => node['postgresql']['password']['postgres']
+}
+
+database 'index' do
+  connection postgresql_connection_info
+  provider   Chef::Provider::Database::Postgresql
+  action     :create
+end
+
+template "#{node[:cabot][:home_dir]}/createdjangosite.py.py" do
+  source "createdjangosite.py.erb"
+  action :create
+end
+
+template "#{node[:cabot][:home_dir]}/createdjangosuperuser.py" do
+  source "createdjangosuperuser.py.erb"
+  action :create
+end
+
+template "/etc/init.d/cabot" do
+  source "cabot.systemd.erb"
+  action :create
+end
+
+
+
 
 bash 'run migrations' do
   cwd node[:cabot][:home_dir]
   code <<-EOH
-    foreman run python manage.py syncdb -e conf/#{node[:cabot][:environment]}.env
-    foreman run python manage.py migrate cabotapp --noinput -e conf/#{node[:cabot][:environment]}.env
+    source venv/bin/activate; cat createdjangosite.py | sudo foreman run python shell
+    source venv/bin/activate; cat createdjangosite.py | sudo foreman run python shell
+    source venv/bin/activate; sudo foreman run python manage.py syncdb 
+    source venv/bin/activate; sudo foreman run python manage.py migrate cabotapp --noinput 
+    source venv/bin/activate; sudo foreman run python manage.py migrate djcelery --noinput
+    source venv/bin/activate; sudo foreman run python manage.py migrate --noinput
+
   EOH
-  action :nothing
-  notifies :run, 'bash[collect static assets]', :immediately
 end
 
 bash 'collect static assets' do
   cwd node[:cabot][:home_dir]
   code <<-EOH
-    foreman run python manage.py collectstatic --noinput -e conf/#{node[:cabot][:environment]}.env
-    foreman run python manage.py compress --force -e conf/#{node[:cabot][:environment]}.env
+    source venv/bin/activate; sudo foreman run python manage.py collectstatic --noinput 
+    source venv/bin/activate; sudo foreman run python manage.py compress --force
   EOH
-  action :nothing
-  notifies :run, 'bash[setup upstart]', :immediately
 end
 
-service 'cabot' do
-  provider Chef::Provider::Service::Upstart
-  action :nothing
+python_pip "uwsgi" do
+  action :install
 end
+
+directory "/etc/uwsgi" do
+  action :create
+end
+
+directory "/etc/uwsgi/vassals" do
+  action :create
+end
+
+template "/etc/systemd/system/uwsgi.service" do
+  source "uwsgi.service.erb"
+  action :create
+end
+
+template "/etc/uwsgi/vassals/cabot.ini" do
+  source "cabot.ini.erb"
+  action :create
+end
+
+template "/etc/systemd/system/cabot-worker.service" do
+  source "cabot-worker.service.erb"
+  action :create
+end
+
+user 'www' do
+  system true
+end
+
+directory "/var/www/" do
+  action :create
+  owner "www"
+  group "www"
+end
+
+directory "/var/www/logs" do
+  action :create
+  owner "www"
+  group "www"
+end
+
+directory "/var/www/run" do
+  action :create
+  owner "www"
+  group "www"
+end
+
+directory "/var/www/run/celery" do
+  action :create
+  owner "www"
+  group "www"
+end
+
+service 'nginx' do
+  supports :status => true, :restart => true, :reload => true
+  action   :stop
+end
+
+
+include_recipe 'nginx'
+include_recipe 'redisio'
+include_recipe 'redisio::enable'
+
+# template "/etc/nginx/conf.d/cabot.conf" do
+#   source "cabot.conf.erb"
+#   action :create
+# end
+
+# service 'cabot' do
+#   provider Chef::Provider::Service::Init::Debian
+#   action :nothing
+# end
 
 bash 'setup upstart' do
   cwd node[:cabot][:home_dir]
   code <<-EOH
-    foreman export upstart /etc/init -f #{node[:cabot][:home_dir]}/Procfile -e #{node[:cabot][:home_dir]}/conf/#{node[:cabot][:environment]}.env -u #{node[:cabot][:user]} -a cabot -t #{node[:cabot][:home_dir]}/upstart
+    source venv/bin/activate; sudo foreman export systemd /etc/init.d -f #{node[:cabot][:home_dir]}/Procfile  -u #{node[:cabot][:user]} -a cabot -t #{node[:cabot][:home_dir]}/systemd
   EOH
-  action :nothing
-  notifies :start, 'service[cabot]'
 end
+
+

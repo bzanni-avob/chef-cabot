@@ -1,0 +1,13 @@
+[uwsgi]
+chdir=/var/www/cabot
+module=cabot.wsgi
+master=True
+vacuum=True
+max-requests=50000
+socket=localhost:5000
+processes=10
+logto=/var/www/logs/cabot_uwsgi.log
+
+for-readline = /var/www/cabot/conf/production.env
+  env = %(_)
+endfor =

@@ -1,0 +1,24 @@
+ # Copied and modified from https://github.com/celery/celery/blob/3.1/extra/systemd/celery.service
+[Unit]
+Description=CabotCelery workers
+After=network.target
+[Service]
+Type=forking
+User=www
+Group=www
+WorkingDirectory=/var/www/cabot/
+EnvironmentFile=/var/www/cabot/conf/production.env
+ExecStart=/bin/celery multi start worker \
+-A cabot --pidfile=/var/www/run/celery/%n.pid \
+--logfile=/var/www/logs/celery_%n.log --loglevel="INFO" \
+-B
+
+ExecStop=/bin/celery multi stopwait worker \
+--pidfile=/var/run/celery/%n.pid
+
+ExecReload=/bin/celery multi restart worker \
+-A cabot --pidfile=/var/www/run/celery/%n.pid \
+--logfile=/var/www/logs/celery_%n.log --loglevel="INFO"
+
+[Install]
+WantedBy=multi-user.target
